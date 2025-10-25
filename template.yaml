@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: bus-api
+
+Globals:
+  Function:
+    Timeout: 3
+    Runtime: nodejs20.x
+    Architectures: [x86_64]
+
+Resources:
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello-world/
+      Handler: app.lambdaHandler
+      Events:
+        CrowdNow:
+          Type: Api
+          Properties:
+            Path: /crowd/now
+            Method: get
+  BusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: bus_app
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  ReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: report/
+      Handler: app.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: bus_app
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: bus_app
+      Events:
+        ReportApi:
+          Type: Api
+          Properties:
+            Path: /report
+            Method: post
+
+Outputs:
+  ApiInvokeUrl:
+    Description: "Invoke URL for /crowd/now"
+    # fixed amazonaws.com
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/crowd/now"
+  FunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt HelloWorldFunction.Arn
