@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.5.5",
+    "@tailwindcss/postcss": "^4.1.16",
+    "@tailwindcss/vite": "^4.1.16",
     "aws-amplify": "^6.6.6",
+    "lucide-react": "^0.548.0",
     "next": "14.2.10",
     "react": "^18",
     "react-dom": "^18"
@@ -21,10 +24,13 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.21",
     "aws-cdk": "^2",
     "aws-cdk-lib": "^2",
     "constructs": "^10.3.0",
     "esbuild": "^0.23.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.16",
     "tsx": "^4.19.0",
     "typescript": "^5.6.2"
   }
