@@ -40,21 +40,79 @@ const busStops: BusStop[] = [
   { id: 7, name: 'G', lat: 40.007, lng: -83.012 },
 ];
 
-/** ---------- Mock Buses (4 weekday / 2 weekend) ---------- */
+/** ---------- Helpers for "along a path" placement ---------- */
+function segLen(a: {lat:number;lng:number}, b:{lat:number;lng:number}) {
+  // small area → Euclidean in degrees is fine
+  const dLat = b.lat - a.lat;
+  const dLng = b.lng - a.lng;
+  return Math.hypot(dLat, dLng);
+}
+
+function buildSegments(stops: BusStop[]) {
+  // A -> B -> ... -> G (no loop back to A)
+  const segs: Array<{a: BusStop; b: BusStop; len: number}> = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    segs.push({ a, b, len: segLen(a, b) });
+  }
+  return segs;
+}
+
+function interpolate(a:{lat:number;lng:number}, b:{lat:number;lng:number}, t:number) {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+function pointAlongPath(stops: BusStop[], t: number) {
+  // t in [0,1] along A->...->G
+  const segs = buildSegments(stops);
+  const total = segs.reduce((s, seg) => s + seg.len, 0);
+  let dist = t * total;
+
+  for (const seg of segs) {
+    if (dist <= seg.len) {
+      const f = seg.len === 0 ? 0 : dist / seg.len;
+      return interpolate(seg.a, seg.b, f);
+    }
+    dist -= seg.len;
+  }
+  // numerical edge: return last stop
+  const last = stops[stops.length - 1];
+  return { lat: last.lat, lng: last.lng };
+}
+
+function nearestStop(pos: {lat:number;lng:number}, stops: BusStop[]) {
+  let best = stops[0];
+  let bestD = Infinity;
+  for (const s of stops) {
+    const d = segLen(pos, s);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
+}
+
+/** ---------- Mock Buses (4 weekday / 2 weekend) placed ALONG A->G ---------- */
 function generateBusData(): Bus[] {
   const day = new Date().getDay(); // 0 Sun ... 6 Sat
   const isWeekend = day === 0 || day === 6;
   const busCount = isWeekend ? 2 : 4;
 
-  return Array.from({ length: busCount }, (_, i) => {
-    const pos = {
-      lat: 40.0 + Math.random() * 0.015,
-      lng: -83.0 - Math.random() * 0.015,
-    };
+  // Evenly space buses along the path: t = (k+1)/(busCount+1)
+  return Array.from({ length: busCount }, (_, k) => {
+    const t = (k + 1) / (busCount + 1);
+
+    // position exactly on the polyline between A and G
+    const pos = pointAlongPath(busStops, t);
+
+    // (optional) tiny jitter to avoid overlap; comment out if not desired
+    // pos.lat += (Math.random() - 0.5) * 0.0004;
+    // pos.lng += (Math.random() - 0.5) * 0.0004;
+
+    const stop = nearestStop(pos, busStops);
+
     return {
-      id: `CC-${i + 1}`,
-      name: `Campus Connect ${i + 1}`,
-      currentStop: busStops[Math.floor(Math.random() * busStops.length)],
+      id: `CC-${k + 1}`,
+      name: `Campus Connect ${k + 1}`,
+      currentStop: stop,
       load: (['empty', 'somewhat empty', 'somewhat busy', 'busy'] as const)[
         Math.floor(Math.random() * 4)
       ],
@@ -63,6 +121,7 @@ function generateBusData(): Bus[] {
     };
   });
 }
+
 
 /** ---------- Load Indicator ---------- */
 const LoadIndicator: React.FC<{ load: LoadLevel }> = ({ load }) => {
@@ -141,6 +200,34 @@ const BusStopDetail: React.FC<{
   );
 };
 
+// Horizontal-first Manhattan path with optional loop closure (last -> first)
+function orthogonalPoints(stops: BusStop[], closeLoop: boolean = false) {
+  const pts: { lat: number; lng: number }[] = [];
+  if (stops.length === 0) return pts;
+
+  // A -> B -> C ... (horizontal first, then vertical)
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    pts.push({ lat: a.lat, lng: a.lng }); // start at A
+    pts.push({ lat: a.lat, lng: b.lng }); // go horizontally to B.x
+    pts.push({ lat: b.lat, lng: b.lng }); // then vertically to B
+  }
+
+  // include last stop explicitly
+  const last = stops[stops.length - 1];
+  pts.push({ lat: last.lat, lng: last.lng });
+
+  // OPTIONAL: close the loop (G -> A) in the same orthogonal style
+  if (closeLoop && stops.length > 1) {
+    const first = stops[0];
+    // from G to directly above/below A (horizontal first), then down/up to A
+    pts.push({ lat: last.lat, lng: first.lng }); // horizontal to A.x
+    pts.push({ lat: first.lat, lng: first.lng }); // vertical to A
+  }
+
+  return pts;
+}
 
 /** ---------- Simple Map (SVG mock) with Option B polyline ---------- */
 const SimpleMap: React.FC<{
@@ -173,7 +260,7 @@ const SimpleMap: React.FC<{
     if (sts.length) pts.push({ lat: sts.at(-1)!.lat, lng: sts.at(-1)!.lng });
     return pts;
   }
-   // Build numeric 0..100 coordinates for SVG (NO percent signs)
+   // Build numeric 0..100 coordinates for SVG 
   const svgPoints = orthogonalPoints(stops)
     .map(p => {
       const x = ((p.lng - minLng) / lngSpan) * 100;
