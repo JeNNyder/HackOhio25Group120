@@ -71,6 +71,31 @@ Resources:
           Properties:
             Path: /report
             Method: post
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: chat/
+      Handler: app.handler
+      Runtime: nodejs20.x
+      Timeout: 15
+      Environment:
+        Variables:
+          CROWD_BASE: "https://yhtqycrmz1.execute-api.us-east-1.amazonaws.com/Prod"
+          LLM_PROVIDER: "bedrock"
+          BEDROCK_MODEL: "anthropic.claude-3-5-sonnet-20240620-v1:0"
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - "bedrock:InvokeModel"
+              - "bedrock:InvokeModelWithResponseStream"
+            Resource: "*"
+      Events:
+        ChatApi:
+          Type: Api
+          Properties:
+            Path: /chat
+            Method: post
 
 Outputs:
   ApiInvokeCrowdNow:
