@@ -9,6 +9,15 @@ Globals:
     Architectures: [x86_64]
 
 Resources:
+  HttpApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'content-type'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -16,26 +25,28 @@ Resources:
       Handler: app.lambdaHandler
       Runtime: nodejs20.x
       Timeout: 10
-      Environment:
-        Variables:
-          TABLE_NAME: bus_app       
-          CAPACITY: "60"
-          PRIOR_MU0: "0.35"
-          PRIOR_K0: "2"
-          TAU_MIN: "10"
-          W_DRIVER: "3"
-          W_RIDER: "1"
-          OUTLIER_DELTA: "0.40"
-          BUS_BONUS: "1.5"
-      Policies:                      
-        - DynamoDBReadPolicy:
-            TableName: bus_app
       Events:
-        CrowdNow:                   
+        CrowdNow:
           Type: Api
           Properties:
+            RestApiId: !Ref HttpApi    
             Path: /crowd/now
             Method: get
+
+  ReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: report/
+      Handler: app.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      Events:
+        ReportApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HttpApi    
+            Path: /report
+            Method: post
   BusTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -51,26 +62,6 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
-
-  ReportFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: report/
-      Handler: app.handler
-      Runtime: nodejs20.x
-      Timeout: 10
-      Environment:
-        Variables:
-          TABLE_NAME: bus_app
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: bus_app
-      Events:
-        ReportApi:
-          Type: Api
-          Properties:
-            Path: /report
-            Method: post
   ChatFunction:
     Type: AWS::Serverless::Function
     Properties:

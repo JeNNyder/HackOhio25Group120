@@ -2,6 +2,12 @@ const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE = process.env.TABLE_NAME;
+const CORS = {
+  "content-type": "application/json",
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "content-type",
+  "access-control-allow-methods": "GET,POST,OPTIONS"
+};
 
 exports.handler = async (event) => {
   // --- Handle CORS preflight (OPTIONS) ---

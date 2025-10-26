@@ -15,6 +15,12 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const PRIOR_LOOKBACK_WEEKS = 4;   // how many weeks to look back
 const PRIOR_HALF_WIN_MIN   = 30;  // ± window (minutes) for prior
 const PRIOR_K_MAX          = 10;  // max prior strength
+const CORS = {
+  "content-type": "application/json",
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "content-type",
+  "access-control-allow-methods": "GET,POST,OPTIONS"
+};
 
 async function computeWeekdayPrior(route, stop, centerMs) {
   const dowTarget = new Date(centerMs).getUTCDay(); // target weekday (0–6)
@@ -70,6 +76,10 @@ async function computeWeekdayPrior(route, stop, centerMs) {
 
 // ---------- Main Lambda handler ----------
 exports.lambdaHandler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers: CORS, body: "" };
+  }
+
   const q = event.queryStringParameters || {};
   const route = q.route || "CC";
   const stop  = q.stop  || "A";      // default stop
@@ -142,6 +152,7 @@ exports.lambdaHandler = async (event) => {
   // ---- Return response ----
   return {
     statusCode: 200,
+    headers: CORS,
     headers: {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
