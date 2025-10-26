@@ -1,19 +1,19 @@
 // frontend/app/api/local/route.ts
 export const runtime = 'nodejs';
 
-/** GET 健康检查 */
+
 export async function GET() {
   return new Response('chat-local ok', { status: 200 });
 }
 
-/** POST: 走 Ollama 本地模型 (http://localhost:11434) 流式返回 */
+
 export async function POST(req: Request) {
   try {
     const { messages } = (await req.json()) as {
       messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
     };
 
-    // 简单把对话拼成一个 prompt
+  
     const system = messages.find(m => m.role === 'system')?.content ?? '';
     const convo = messages
       .filter(m => m.role !== 'system')
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
 
-    // Ollama 返回 NDJSON，每行像 {"response":"…"} 或 {"done":true}
+   
     const readable = new ReadableStream({
       async start(controller) {
         let buffer = '';
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          buffer = lines.pop() ?? ''; // 可能最后一行是半截，留到下次
+          buffer = lines.pop() ?? ''; 
 
           for (const line of lines) {
             if (!line.trim()) continue;
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
                 controller.enqueue(encoder.encode(obj.response));
               }
             } catch {
-              /* 忽略解析失败的半行 */
+          
             }
           }
         }

@@ -119,8 +119,7 @@ async function callBedrockClaude({ system, user }) {
     ]
   });
 
-  // Bedrock requires AWS SigV4 signing; to keep hackathon简单，建议改用 @aws-sdk/client-bedrock-runtime。
-  // 这里给出错误提示，方便你切换到 OpenAI 先跑通。
+
   throw new Error("For Bedrock in Lambda, please use @aws-sdk/client-bedrock-runtime with SigV4. Switch LLM_PROVIDER=openai to run immediately.");
 }
 
@@ -147,10 +146,9 @@ exports.handler = async (event) => {
     const b = JSON.parse(event.body || "{}");
     const userText = String(b.message || "").trim();
 
-    // 1) 从用户问题里尽力抽 route/stop/bus_id/win
     const parsed = { route: "CC", win: 15, ...extractParamsFromMessage(userText), ...b };
 
-    // 必须至少有 stop 才能给出针对性拥挤度；若没有，就让 LLM 引导
+
     let crowd = { note: "no stop selected yet" };
     if (parsed.stop) {
       const base = process.env.CROWD_BASE; // e.g. https://.../Prod
@@ -163,7 +161,7 @@ exports.handler = async (event) => {
       crowd = await jsonFetch(`${base}/crowd/now?${qs}`);
     }
 
-    // 2) 构建 prompt & 调 LLM
+
     const prompt = buildPrompt(userText, crowd, parsed);
     const text = await runLLM(prompt);
 
