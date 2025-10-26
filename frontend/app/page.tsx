@@ -472,6 +472,64 @@ const SimpleMap: React.FC<{
 const ChatDock: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expanded, onToggle }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+// Streams a single user prompt to /api/chat and appends the assistant reply
+const sendLLMMessage = async (userText: string) => {
+  if (!userText) return;
+
+  // 1) push the user message
+  setMessages(prev => [...prev, { type: 'user', text: userText }]);
+
+  // 2) create a placeholder assistant bubble we’ll stream into
+  setMessages(prev => [...prev, { type: 'bot', text: '' }]);
+
+  // Build an OpenAI/Anthropic-style history from current messages (excluding the just-added placeholder)
+  const history = messages.map(m =>
+    m.type === 'user'
+      ? ({ role: 'user', content: m.text } as const)
+      : ({ role: 'assistant', content: m.text } as const)
+  );
+
+  const body = JSON.stringify({
+    messages: [
+      { role: 'system', content: 'You are a helpful campus bus assistant for OSU CC routes. Be concise, ask for any missing details (like start/destination), and return ETAs/loads clearly.' },
+      ...history,
+      { role: 'user', content: userText },
+    ],
+  });
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let acc = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      acc += decoder.decode(value, { stream: true });
+
+      // stream into the last bot message
+      setMessages(prev => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { type: 'bot', text: acc };
+        return copy;
+      });
+    }
+  } catch {
+    // replace the placeholder with an error
+    setMessages(prev => [
+      ...prev.slice(0, -1),
+      { type: 'bot', text: '⚠️ Sorry, I had trouble reaching the assistant.' },
+    ]);
+  }
+};
 
   const shortcuts: Shortcut[] = useMemo(
     () => [
@@ -493,15 +551,13 @@ const ChatDock: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expan
     setMessages((prev) => [...prev, { type: 'user', text: label }, { type: 'bot', text: canned }]);
   };
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    const lower = input.toLowerCase();
-    let reply = "I'm analyzing current routes and loads. Ask me for the fastest path or lowest load.";
-    if (lower.includes('fastest')) reply = 'Typical fastest CC trip is ~15–20 minutes depending on time and load.';
-    if (lower.includes('load') || lower.includes('busy')) reply = 'CC-1 is somewhat busy; CC-3 is relatively empty. Want a specific stop?';
-    setMessages((prev) => [...prev, { type: 'user', text: input }, { type: 'bot', text: reply }]);
-    setInput('');
-  };
+  const handleSend = async () => {
+  const q = input.trim();
+  if (!q) return;
+  setInput('');
+  await sendLLMMessage(q);
+};
+
 
   // Collapsed: floating button
   if (!expanded) {
