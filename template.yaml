@@ -14,8 +14,24 @@ Resources:
     Properties:
       CodeUri: hello-world/
       Handler: app.lambdaHandler
+      Runtime: nodejs20.x
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: bus_app       
+          CAPACITY: "60"
+          PRIOR_MU0: "0.35"
+          PRIOR_K0: "2"
+          TAU_MIN: "10"
+          W_DRIVER: "3"
+          W_RIDER: "1"
+          OUTLIER_DELTA: "0.40"
+          BUS_BONUS: "1.5"
+      Policies:                      
+        - DynamoDBReadPolicy:
+            TableName: bus_app
       Events:
-        CrowdNow:
+        CrowdNow:                   
           Type: Api
           Properties:
             Path: /crowd/now
@@ -57,10 +73,15 @@ Resources:
             Method: post
 
 Outputs:
-  ApiInvokeUrl:
-    Description: "Invoke URL for /crowd/now"
-    # fixed amazonaws.com
+  ApiInvokeCrowdNow:
+    Description: Invoke URL for /crowd/now
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/crowd/now"
+  ApiInvokeReport:
+    Description: Invoke URL for /report
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/report"
   FunctionArn:
-    Description: "Lambda Function ARN"
+    Description: Lambda Function ARN
     Value: !GetAtt HelloWorldFunction.Arn
+  BusTableName:
+    Description: DynamoDB table name
+    Value: !Ref BusTable
