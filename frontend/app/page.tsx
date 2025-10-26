@@ -8,6 +8,7 @@ const poppins = Poppins({
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, X, Zap, TrendingDown, Navigation, Send } from 'lucide-react';
+import { fetchCrowdNow, postReport } from "@/lib/api"; 
 
 /** ---------- Types ---------- */
 interface BusStop {
@@ -598,6 +599,7 @@ export default function CampusBusTracker() {
 
   // histogram modal
   const [modalBus, setModalBus] = useState<Bus | null>(null);
+  
 
   useEffect(() => {
     setBuses(generateBusData());
@@ -635,72 +637,216 @@ export default function CampusBusTracker() {
     };
   }, []);
 
+  // backend integration states
+  const [crowd, setCrowd] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [reportLevel, setReportLevel] = useState<number>(3);
+  const [reportHeadcount, setReportHeadcount] = useState<number | "">("");
+
+  // call /crowd/now for the selected stop
+  async function onQueryCrowd() {
+    if (!selectedStop) return;
+    setLoading(true); setError(""); setCrowd(null);
+    try {
+      const res = await fetchCrowdNow({
+        route: "CC",
+        stop: selectedStop.name ?? String(selectedStop.id),
+        win: 15,
+      });
+      setCrowd(res);
+    } catch (e: any) {
+      setError(e.message ?? "Request failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // POST /report (rider example); refresh crowd after saving
+  async function onSubmitReport() {
+    if (!selectedStop) return;
+    setLoading(true); setError("");
+    try {
+      await postReport({
+        route: "CC",
+        stop: selectedStop.name ?? String(selectedStop.id),
+        source: "rider",
+        level: Number(reportLevel),
+        headcount: reportHeadcount === "" ? undefined : Number(reportHeadcount),
+      });
+      await onQueryCrowd();
+    } catch (e: any) {
+      setError(e.message ?? "Report failed");
+    } finally {
+    setLoading(false);
+  }}
+
   const appear = (on: boolean) =>
     `transition-all duration-700 ease-out ${on ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className={`${appear(showTitle)} mb-8`}>
-          <h1 className={`${poppins.className} text-5xl font-extrabold bg-gradient-to-r from-red-700 to-pink-600 bg-clip-text text-transparent tracking-tight`}>
-            Campus Connect
-          </h1>
-          <p className="text-gray-600">Real-time bus tracking and load monitoring</p>
-          <div className="mt-2 text-sm text-gray-500">
-            {new Date().toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </div>
+  <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className={`${appear(showTitle)} mb-8`}>
+        <h1
+          className={`${poppins.className} text-5xl font-extrabold bg-gradient-to-r from-red-700 to-pink-600 bg-clip-text text-transparent tracking-tight`}
+        >
+          Campus Connect
+        </h1>
+        <p className="text-gray-600">Real-time bus tracking and load monitoring</p>
+        <div className="mt-2 text-sm text-gray-500">
+          {new Date().toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
         </div>
+      </div>
 
-        {/* Main Layout */}
-        <div className="grid grid-cols-1 gap-6">
-          <div>
-            {/* Map */}
-            <div className={appear(showMap)}>
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Bus Route Map</h2>
-              <SimpleMap
-                buses={buses}
-                stops={busStops}
-                selectedStop={selectedStop}
-                onStopSelect={setSelectedStop}
-              />
+      {/* Main Layout */}
+      <div className="grid grid-cols-1 gap-6">
+        <div>
+          {/* Map */}
+          <div className={appear(showMap)}>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Bus Route Map</h2>
 
-              {selectedStop && (
-                <div className="mt-6">
-                  <BusStopDetail stop={selectedStop} buses={buses} onClose={() => setSelectedStop(null)} />
+            <SimpleMap
+              buses={buses}
+              stops={busStops}
+              selectedStop={selectedStop}
+              onStopSelect={setSelectedStop}
+            />
+
+            {/* === Crowd panel + Report form (only when a stop is selected) === */}
+            {selectedStop && (
+              <div className="mt-6 rounded-xl border p-4 bg-white/70 backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-gray-500">Selected stop</div>
+                    <div className="text-lg font-semibold">
+                      {selectedStop.name ?? String(selectedStop.id)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={onQueryCrowd}
+                      className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
+                    >
+                      Query crowd
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* List */}
-            <div className={`${appear(showList)} mt-8`}>
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Active Buses (CC)</h2>
-              <div className="grid md:grid-cols-2 gap-4">
-                {buses.map((bus) => (
-                  <BusCard
-                    key={bus.id}
-                    bus={bus}
-                    onClick={() => {
-                      setModalBus(bus); // open histogram
-                    }}
-                  />
-                ))}
+                {/* result / loading / error */}
+                <div className="mt-3">
+                  {loading && <div className="text-sm text-gray-500">Loading…</div>}
+                  {error && <div className="text-sm text-red-600">{error}</div>}
+                  {crowd && (
+                    <div className="text-sm text-gray-700">
+                      <div>
+                        Level: <b>{crowd.level}</b>{" "}
+                        <span className="text-gray-500">(1 not busy → 4 packed)</span>
+                      </div>
+                      <div>
+                        Est. headcount: <b>{crowd.est_headcount}</b>{" "}
+                        {Array.isArray(crowd.headcount_ci68) && (
+                          <span className="text-gray-500">
+                            (CI68: {crowd.headcount_ci68[0]} ~ {crowd.headcount_ci68[1]})
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        Remaining capacity: <b>{crowd.remaining_capacity}</b>
+                      </div>
+                      <div className="text-gray-500">
+                        confidence: {crowd.confidence} · reports: {crowd.counts?.reports ?? 0}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* report form */}
+                <div className="mt-4 grid md:grid-cols-3 gap-3">
+                  <label className="text-sm">
+                    Level (1–4)
+                    <input
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={reportLevel}
+                      onChange={(e) => setReportLevel(Number(e.target.value))}
+                      className="mt-1 w-full rounded-md border px-2 py-1"
+                    />
+                  </label>
+
+                  <label className="text-sm">
+                    Headcount (optional)
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={reportHeadcount}
+                      onChange={(e) =>
+                        setReportHeadcount(e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      className="mt-1 w-full rounded-md border px-2 py-1"
+                    />
+                  </label>
+
+                  <div className="flex items-end">
+                    <button
+                      onClick={onSubmitReport}
+                      className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                      disabled={loading}
+                    >
+                      Submit report
+                    </button>
+                  </div>
+                </div>
               </div>
+            )}
+
+            {/* Stop detail (existing) */}
+            {selectedStop && (
+              <div className="mt-6">
+                <BusStopDetail
+                  stop={selectedStop}
+                  buses={buses}
+                  onClose={() => setSelectedStop(null)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* List */}
+          <div className={`${appear(showList)} mt-8`}>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Active Buses (CC)</h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              {buses.map((bus) => (
+                <BusCard
+                  key={bus.id}
+                  bus={bus}
+                  onClick={() => {
+                    setModalBus(bus); // open histogram
+                  }}
+                />
+              ))}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Floating Chatbot (single instance) */}
-      {showChat && <ChatDock expanded={chatExpanded} onToggle={() => setChatExpanded((v) => !v)} />}
-
-      {/* Histogram Modal */}
-      {modalBus && <BusLoadModal bus={modalBus} onClose={() => setModalBus(null)} />}
     </div>
-  );
+
+    {/* Floating Chatbot (single instance) */}
+    {showChat && (
+      <ChatDock expanded={chatExpanded} onToggle={() => setChatExpanded((v) => !v)} />
+    )}
+
+    {/* Histogram Modal */}
+    {modalBus && <BusLoadModal bus={modalBus} onClose={() => setModalBus(null)} />}
+  </div>
+);
 }
