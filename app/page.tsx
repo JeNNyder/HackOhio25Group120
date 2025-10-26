@@ -507,7 +507,8 @@ const ChatDock: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expan
     return (
       <button
         onClick={onToggle}
-        className="fixed z-50 bottom-5 right-5 flex items-center gap-2 bg-gray-600 text-white px-4 py-3 rounded-full shadow-xl hover:bg-gray-700"
+        className="fixed z-50 bottom-1 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-gray-600 text-white px-4 py-3 rounded-full shadow-xl hover:bg-gray-700"
+
         aria-label="Open chatbot"
       >
         <MessageCircle size={20} />
@@ -518,7 +519,7 @@ const ChatDock: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expan
 
   // Expanded: floating panel
   return (
-    <div className="fixed z-50 bottom-5 right-5 sm:w-[380px] w-[calc(100vw-1.5rem)] sm:max-h-[80vh] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+    <div className="fixed z-50 bottom-5 left-1/2 -translate-x-1/2 sm:w-[380px] w-[calc(100vw-1.5rem)] sm:max-h-[80vh] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
       <div className="bg-gray-600 text-white p-3 sm:p-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <MessageCircle size={22} />
