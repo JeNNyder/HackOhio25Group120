@@ -7,8 +7,9 @@ const poppins = Poppins({
 });
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { MessageCircle, X, Zap, TrendingDown, Navigation, Send } from 'lucide-react';
-import { fetchCrowdNow, postReport } from "@/lib/api"; 
+import { X } from 'lucide-react'; // Only X is needed in this file now
+import { fetchCrowdNow, postReport } from "@/lib/api";
+import ChatDock from '@/components/ChatDock'; // ⬅️ use the extracted component
 
 /** ---------- Types ---------- */
 interface BusStop {
@@ -26,15 +27,6 @@ interface Bus {
   eta: number;
   position: { lat: number; lng: number };
   progress01: number; // [0,1) along the CLOSED orthogonal loop
-}
-interface Message {
-  type: 'user' | 'bot';
-  text: string;
-}
-interface Shortcut {
-  icon: React.ReactNode;
-  text: string;
-  action: 'fastest' | 'lowest' | 'next';
 }
 
 /** ---------- Stops ---------- */
@@ -204,19 +196,7 @@ const BusCard: React.FC<{ bus: Bus; onClick: () => void }> = ({ bus, onClick }) 
 
 /** ---------- Histogram Modal (7:30–9:30) ---------- */
 const timeLabels = [
-  '7:30',
-  '7:40',
-  '7:50',
-  '8:00',
-  '8:10',
-  '8:20',
-  '8:30',
-  '8:40',
-  '8:50',
-  '9:00',
-  '9:10',
-  '9:20',
-  '9:30',
+  '7:30','7:40','7:50','8:00','8:10','8:20','8:30','8:40','8:50','9:00','9:10','9:20','9:30',
 ];
 
 function seededRand(seedStr: string) {
@@ -226,10 +206,8 @@ function seededRand(seedStr: string) {
     h = Math.imul(h, 16777619);
   }
   return () => {
-    h += h << 13;
-    h ^= h >>> 7;
-    h += h << 3;
-    h ^= h >>> 17;
+    h += h << 13; h ^= h >>> 7;
+    h += h << 3;  h ^= h >>> 17;
     h += h << 5;
     return (h >>> 0) / 4294967295;
   };
@@ -248,8 +226,7 @@ const BusLoadModal: React.FC<{ bus: Bus; onClose: () => void }> = ({ bus, onClos
   const series = useMemo(() => makeMockLoadSeries(bus.id), [bus.id]);
 
   // virtual canvas
-  const W = 800;
-  const H = 200;
+  const W = 800, H = 200;
   const M = { top: 8, right: 10, bottom: 48, left: 48 };
   const plotW = W - M.left - M.right;
   const plotH = H - M.top - M.bottom;
@@ -273,15 +250,8 @@ const BusLoadModal: React.FC<{ bus: Bus; onClose: () => void }> = ({ bus, onClos
         </div>
 
         <div className="w-full">
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            preserveAspectRatio="none"
-            className="w-full h-48"
-            style={{
-              fontFamily:
-                'Poppins, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-            }}
-          >
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-48"
+               style={{ fontFamily: 'Poppins, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial' }}>
             {[0, 0.25, 0.5, 0.75, 1].map((t, idx) => {
               const y = M.top + (1 - t) * plotH;
               return (
@@ -298,8 +268,7 @@ const BusLoadModal: React.FC<{ bus: Bus; onClose: () => void }> = ({ bus, onClos
               const h = v * plotH;
               const x = M.left + gap + i * (barW + gap);
               const y = M.top + (plotH - h);
-              const color =
-                v < 0.25 ? '#e2c8c8ff' : v < 0.5 ? '#d7a2a2ff' : v < 0.75 ? '#de8484ff' : '#de5353ff';
+              const color = v < 0.25 ? '#e2c8c8ff' : v < 0.5 ? '#d7a2a2ff' : v < 0.75 ? '#de8484ff' : '#de5353ff';
               return (
                 <g key={i}>
                   <rect x={x} y={y} width={barW} height={h} rx={4} fill={color} />
@@ -403,8 +372,7 @@ const SimpleMap: React.FC<{
     const n = sts.length;
     if (!n) return pts;
     for (let i = 0; i < n; i++) {
-      const a = sts[i],
-        b = sts[(i + 1) % n];
+      const a = sts[i], b = sts[(i + 1) % n];
       pts.push({ lat: a.lat, lng: a.lng });
       const elbow = { lat: a.lat, lng: b.lng };
       if (elbow.lat !== a.lat || elbow.lng !== a.lng) pts.push(elbow);
@@ -468,179 +436,6 @@ const SimpleMap: React.FC<{
   );
 };
 
-/** ---------- Chat (fixed floating widget) ---------- */
-const ChatDock: React.FC<{ expanded: boolean; onToggle: () => void }> = ({ expanded, onToggle }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-// Streams a single user prompt to /api/chat and appends the assistant reply
-const sendLLMMessage = async (userText: string) => {
-  if (!userText) return;
-
-  // 1) push the user message
-  setMessages(prev => [...prev, { type: 'user', text: userText }]);
-
-  // 2) create a placeholder assistant bubble we’ll stream into
-  setMessages(prev => [...prev, { type: 'bot', text: '' }]);
-
-  // Build an OpenAI/Anthropic-style history from current messages (excluding the just-added placeholder)
-  const history = messages.map(m =>
-    m.type === 'user'
-      ? ({ role: 'user', content: m.text } as const)
-      : ({ role: 'assistant', content: m.text } as const)
-  );
-
-  const body = JSON.stringify({
-    messages: [
-      { role: 'system', content: 'You are a helpful campus bus assistant for OSU CC routes. Be concise, ask for any missing details (like start/destination), and return ETAs/loads clearly.' },
-      ...history,
-      { role: 'user', content: userText },
-    ],
-  });
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
-
-    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let acc = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      acc += decoder.decode(value, { stream: true });
-
-      // stream into the last bot message
-      setMessages(prev => {
-        const copy = [...prev];
-        copy[copy.length - 1] = { type: 'bot', text: acc };
-        return copy;
-      });
-    }
-  } catch {
-    // replace the placeholder with an error
-    setMessages(prev => [
-      ...prev.slice(0, -1),
-      { type: 'bot', text: '⚠️ Sorry, I had trouble reaching the assistant.' },
-    ]);
-  }
-};
-
-  const shortcuts: Shortcut[] = useMemo(
-    () => [
-      { icon: <Navigation size={16} />, text: 'Fastest Path', action: 'fastest' },
-      { icon: <TrendingDown size={16} />, text: 'Lowest Load', action: 'lowest' },
-      { icon: <Zap size={16} />, text: 'Next Bus', action: 'next' },
-    ],
-    []
-  );
-
-  const handleShortcut = (action: Shortcut['action']) => {
-    const canned =
-      action === 'fastest'
-        ? "Tell me start and destination, e.g., 'Fastest route from Student Union to Library'."
-        : action === 'lowest'
-        ? 'Right now CC-2 looks empty near Recreation Center; CC-4 is somewhat empty near Engineering.'
-        : 'Next CC bus to Student Union is ~3 minutes.';
-    const label = shortcuts.find((s) => s.action === action)?.text ?? 'Shortcut';
-    setMessages((prev) => [...prev, { type: 'user', text: label }, { type: 'bot', text: canned }]);
-  };
-
-  const handleSend = async () => {
-  const q = input.trim();
-  if (!q) return;
-  setInput('');
-  await sendLLMMessage(q);
-};
-
-
-  // Collapsed: floating button
-  if (!expanded) {
-    return (
-      <button
-        onClick={onToggle}
-        className="fixed z-50 bottom-1 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-gray-600 text-white px-4 py-3 rounded-full shadow-xl hover:bg-gray-700"
-
-        aria-label="Open chatbot"
-      >
-        <MessageCircle size={20} />
-        <span className="font-medium">Ask anything</span>
-      </button>
-    );
-  }
-
-  // Expanded: floating panel
-  return (
-    <div className="fixed z-50 bottom-5 left-1/2 -translate-x-1/2 sm:w-[380px] w-[calc(100vw-1.5rem)] sm:max-h-[80vh] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
-      <div className="bg-gray-600 text-white p-3 sm:p-4 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <MessageCircle size={22} />
-          <h3 className="font-semibold">Campus Connect Assistant</h3>
-        </div>
-        <button onClick={onToggle} className="hover:bg-gray-700 rounded-full p-1" aria-label="Close chatbot">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="flex gap-2 p-2 sm:p-3 bg-gray-50 border-b overflow-x-auto">
-        {shortcuts.map((s) => (
-          <button
-            key={s.text}
-            onClick={() => handleShortcut(s.action)}
-            className="flex items-center gap-1 bg-white hover:bg-red-50 text-red-600 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap border border-red-200 transition-colors"
-          >
-            {s.icon}
-            {s.text}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {messages.length === 0 ? (
-          <div className="text-center text-gray-500 mt-8">
-            <MessageCircle size={44} className="mx-auto mb-2 text-gray-300" />
-            <p className="font-medium">How can I help you today?</p>
-            <p className="text-sm mt-1">Ask about routes, loads, or ETAs</p>
-          </div>
-        ) : (
-          messages.map((m, i) => (
-            <div key={i} className={`flex ${m.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[80%] p-3 rounded-2xl ${
-                  m.type === 'user' ? 'bg-gray-600 text-white rounded-br-none' : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                }`}
-              >
-                {m.text}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="p-3 border-t bg-gray-50">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your question..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-600"
-          />
-          <button onClick={handleSend} className="bg-gray-600 hover:bg-gray-700 text-white rounded-full p-2">
-            <Send size={18} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 /** ---------- Page ---------- */
 export default function CampusBusTracker() {
   const [buses, setBuses] = useState<Bus[]>([]);
@@ -655,7 +450,6 @@ export default function CampusBusTracker() {
 
   // histogram modal
   const [modalBus, setModalBus] = useState<Bus | null>(null);
-  
 
   useEffect(() => {
     setBuses(generateBusData());
@@ -734,175 +528,180 @@ export default function CampusBusTracker() {
     } catch (e: any) {
       setError(e.message ?? "Report failed");
     } finally {
-    setLoading(false);
-  }}
+      setLoading(false);
+    }
+  }
 
   const appear = (on: boolean) =>
     `transition-all duration-700 ease-out ${on ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`;
 
   return (
-  <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className={`${appear(showTitle)} mb-8`}>
-        <h1
-          className={`${poppins.className} text-5xl font-extrabold bg-gradient-to-r from-red-700 to-pink-600 bg-clip-text text-transparent tracking-tight`}
-        >
-          Campus Connect
-        </h1>
-        <p className="text-gray-600">Real-time bus tracking and load monitoring</p>
-        <div className="mt-2 text-sm text-gray-500">
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        </div>
-      </div>
-
-      {/* Main Layout */}
-      <div className="grid grid-cols-1 gap-6">
-        <div>
-          {/* Map */}
-          <div className={appear(showMap)}>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Bus Route Map</h2>
-
-            <SimpleMap
-              buses={buses}
-              stops={busStops}
-              selectedStop={selectedStop}
-              onStopSelect={setSelectedStop}
-            />
-
-            {/* === Crowd panel + Report form (only when a stop is selected) === */}
-            {selectedStop && (
-              <div className="mt-6 rounded-xl border p-4 bg-white/70 backdrop-blur">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-gray-500">Selected stop</div>
-                    <div className="text-lg font-semibold">
-                      {selectedStop.name ?? String(selectedStop.id)}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={onQueryCrowd}
-                      className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
-                    >
-                      Query crowd
-                    </button>
-                  </div>
-                </div>
-
-                {/* result / loading / error */}
-                <div className="mt-3">
-                  {loading && <div className="text-sm text-gray-500">Loading…</div>}
-                  {error && <div className="text-sm text-red-600">{error}</div>}
-                  {crowd && (
-                    <div className="text-sm text-gray-700">
-                      <div>
-                        Level: <b>{crowd.level}</b>{" "}
-                        <span className="text-gray-500">(1 not busy → 4 packed)</span>
-                      </div>
-                      <div>
-                        Est. headcount: <b>{crowd.est_headcount}</b>{" "}
-                        {Array.isArray(crowd.headcount_ci68) && (
-                          <span className="text-gray-500">
-                            (CI68: {crowd.headcount_ci68[0]} ~ {crowd.headcount_ci68[1]})
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        Remaining capacity: <b>{crowd.remaining_capacity}</b>
-                      </div>
-                      <div className="text-gray-500">
-                        confidence: {crowd.confidence} · reports: {crowd.counts?.reports ?? 0}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* report form */}
-                <div className="mt-4 grid md:grid-cols-3 gap-3">
-                  <label className="text-sm">
-                    Level (1–4)
-                    <input
-                      type="number"
-                      min={1}
-                      max={4}
-                      value={reportLevel}
-                      onChange={(e) => setReportLevel(Number(e.target.value))}
-                      className="mt-1 w-full rounded-md border px-2 py-1"
-                    />
-                  </label>
-
-                  <label className="text-sm">
-                    Headcount (optional)
-                    <input
-                      type="number"
-                      min={0}
-                      max={60}
-                      value={reportHeadcount}
-                      onChange={(e) =>
-                        setReportHeadcount(e.target.value === "" ? "" : Number(e.target.value))
-                      }
-                      className="mt-1 w-full rounded-md border px-2 py-1"
-                    />
-                  </label>
-
-                  <div className="flex items-end">
-                    <button
-                      onClick={onSubmitReport}
-                      className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                      disabled={loading}
-                    >
-                      Submit report
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Stop detail (existing) */}
-            {selectedStop && (
-              <div className="mt-6">
-                <BusStopDetail
-                  stop={selectedStop}
-                  buses={buses}
-                  onClose={() => setSelectedStop(null)}
-                />
-              </div>
-            )}
+    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className={`${appear(showTitle)} mb-8`}>
+          <h1
+            className={`${poppins.className} text-5xl font-extrabold bg-gradient-to-r from-red-700 to-pink-600 bg-clip-text text-transparent tracking-tight`}
+          >
+            Campus Connect
+          </h1>
+          <p className="text-gray-600">Real-time bus tracking and load monitoring</p>
+          <div className="mt-2 text-sm text-gray-500">
+            {new Date().toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
           </div>
+        </div>
 
-          {/* List */}
-          <div className={`${appear(showList)} mt-8`}>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Active Buses (CC)</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              {buses.map((bus) => (
-                <BusCard
-                  key={bus.id}
-                  bus={bus}
-                  onClick={() => {
-                    setModalBus(bus); // open histogram
-                  }}
-                />
-              ))}
+        {/* Main Layout */}
+        <div className="grid grid-cols-1 gap-6">
+          <div>
+            {/* Map */}
+            <div className={appear(showMap)}>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Bus Route Map</h2>
+
+              <SimpleMap
+                buses={buses}
+                stops={busStops}
+                selectedStop={selectedStop}
+                onStopSelect={setSelectedStop}
+              />
+
+              {/* === Crowd panel + Report form (only when a stop is selected) === */}
+              {selectedStop && (
+                <div className="mt-6 rounded-xl border p-4 bg-white/70 backdrop-blur">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-gray-500">Selected stop</div>
+                      <div className="text-lg font-semibold">
+                        {selectedStop.name ?? String(selectedStop.id)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={onQueryCrowd}
+                        className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
+                      >
+                        Query crowd
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* result / loading / error */}
+                  <div className="mt-3">
+                    {loading && <div className="text-sm text-gray-500">Loading…</div>}
+                    {error && <div className="text-sm text-red-600">{error}</div>}
+                    {crowd && (
+                      <div className="text-sm text-gray-700">
+                        <div>
+                          Level: <b>{crowd.level}</b>{" "}
+                          <span className="text-gray-500">(1 not busy → 4 packed)</span>
+                        </div>
+                        <div>
+                          Est. headcount: <b>{crowd.est_headcount}</b>{" "}
+                          {Array.isArray(crowd.headcount_ci68) && (
+                            <span className="text-gray-500">
+                              (CI68: {crowd.headcount_ci68[0]} ~ {crowd.headcount_ci68[1]})
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          Remaining capacity: <b>{crowd.remaining_capacity}</b>
+                        </div>
+                        <div className="text-gray-500">
+                          confidence: {crowd.confidence} · reports: {crowd.counts?.reports ?? 0}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* report form */}
+                  <div className="mt-4 grid md:grid-cols-3 gap-3">
+                    <label className="text-sm">
+                      Level (1–4)
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={reportLevel}
+                        onChange={(e) => setReportLevel(Number(e.target.value))}
+                        className="mt-1 w-full rounded-md border px-2 py-1"
+                      />
+                    </label>
+
+                    <label className="text-sm">
+                      Headcount (optional)
+                      <input
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={reportHeadcount}
+                        onChange={(e) =>
+                          setReportHeadcount(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        className="mt-1 w-full rounded-md border px-2 py-1"
+                      />
+                    </label>
+
+                    <div className="flex items-end">
+                      <button
+                        onClick={onSubmitReport}
+                        className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                        disabled={loading}
+                      >
+                        Submit report
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Stop detail (existing) */}
+              {selectedStop && (
+                <div className="mt-6">
+                  <BusStopDetail
+                    stop={selectedStop}
+                    buses={buses}
+                    onClose={() => setSelectedStop(null)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* List */}
+            <div className={`${appear(showList)} mt-8`}>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Active Buses (CC)</h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                {buses.map((bus) => (
+                  <BusCard
+                    key={bus.id}
+                    bus={bus}
+                    onClick={() => {
+                      setModalBus(bus); // open histogram
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Floating Chatbot (single instance) */}
+      {showChat && (
+        <ChatDock
+          expanded={chatExpanded}
+          onToggle={() => setChatExpanded((v) => !v)}
+          buses={buses}   // pass live bus data
+        />
+      )}
+
+      {/* Histogram Modal */}
+      {modalBus && <BusLoadModal bus={modalBus} onClose={() => setModalBus(null)} />}
     </div>
-
-    {/* Floating Chatbot (single instance) */}
-    {showChat && (
-      <ChatDock expanded={chatExpanded} onToggle={() => setChatExpanded((v) => !v)} />
-    )}
-
-    {/* Histogram Modal */}
-    {modalBus && <BusLoadModal bus={modalBus} onClose={() => setModalBus(null)} />}
-  </div>
-);
+  );
 }
