@@ -4,37 +4,52 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE = process.env.TABLE_NAME;
 
 exports.handler = async (event) => {
-  try {
-    const body = JSON.parse(event.body || "{}");
-    const { route, stop, bus_id, source, level, headcount } = body;
-
-    // Basic validation
-    if (!route || !stop || !level) {
-      return { statusCode: 400, body: "missing route|stop|level" };
-    }
-
-    const now = new Date().toISOString();
-    const item = {
-      PK: `REPORT#${route}#${stop}`,
-      SK: now,
-      route,
-      stop,
-      bus_id: bus_id || null,
-      source: source || "rider", // 'driver' or 'rider'
-      level,
-      headcount: headcount ?? null,
-      created_at: now
-    };
-
-    await ddb.send(new PutCommand({ TableName: TABLE, Item: item }));
-
+  // --- Handle CORS preflight (OPTIONS) ---
+  if (event.httpMethod === "OPTIONS") {
     return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ok: true, saved_at: now })
+      statusCode: 204,
+      headers: {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-headers": "content-type",
+      },
     };
-  } catch (err) {
-    console.error("Error:", err);
-    return { statusCode: 500, body: err.message || "error" };
   }
+
+  // --- Main POST logic ---
+  const b = JSON.parse(event.body || "{}");
+  const route = b.route;
+  const stop = b.stop;
+  const busId = b.bus_id || null;
+  const source = b.source || "rider"; // "driver" | "rider"
+  const level = Number(b.level); // 1..4
+  const headcount = b.headcount != null ? Number(b.headcount) : null;
+
+  const now = new Date();
+  const iso = now.toISOString();
+  const dow = now.getUTCDay(); // 0=Sunday..6=Saturday
+
+  const item = {
+    PK: `REPORT#${route}#${stop}`,
+    SK: iso,
+    route,
+    stop,
+    bus_id: busId,
+    source,
+    level,
+    created_at: iso,
+    dow,
+  };
+  if (headcount != null) item.headcount = headcount;
+
+  await ddb.send(new PutCommand({ TableName: TABLE, Item: item }));
+
+  return {
+    statusCode: 200,
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+    },
+    body: JSON.stringify({ ok: true, saved_at: now.toISOString() }),
+  };
 };
